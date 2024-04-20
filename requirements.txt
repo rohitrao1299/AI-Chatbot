@@ -1,0 +1,9 @@
+langchain_openai 
+langchain_core
+python-dotenv
+langchain_community
+Flask
+diffusers
+torch
+accelerate
+transformers

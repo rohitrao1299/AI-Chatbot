@@ -1,0 +1,36 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Langchain API Demo With LLAMA2</title>
+    <link rel="stylesheet" type="text/css" href="static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Langchain API Demo With LLAMA2</h1>
+        <form action="/chat" method="post">
+            <input type="text" name="input_text" placeholder="Search the topic u want">
+            <button type="submit">Submit</button>
+        </form>
+        <div id="chat-history"></div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('form').on('submit', function(e) {
+                e.preventDefault();
+                $.ajax({
+                    type: 'POST',
+                    url: '/chat',
+                    data: $('form').serialize(),
+                    success: function(response) {
+                        $('#chat-history').append('<p>You: ' + $('input[name=input_text]').val() + '</p>');
+                        $('#chat-history').append('<p>Assistant: ' + response.response + '</p>');
+                        $('input[name=input_text]').val('');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
