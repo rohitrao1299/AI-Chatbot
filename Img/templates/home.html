@@ -9,5 +9,20 @@
         <!-- No need for a text input field since the prompt is defined in the Python code -->
         <input type="submit" value="Generate Image">
     </form>
+
+    <!-- Form for story submission -->
+    <form action="/submit_story" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="image_filename" value="{{ image_filename }}">
+        <label for="story">Enter your story:</label><br>
+        <textarea name="story" id="story" rows="4" cols="50"></textarea><br>
+        <input type="submit" value="Submit Story">
+    </form>
+
+    <!-- Display the generated image and its filename -->
+    {% if image_filename %}
+        <h2>Generated Image:</h2>
+        <img src="{{ url_for('static', filename=image_filename) }}" alt="Generated Image">
+        <p>Filename: {{ image_filename }}</p>
+    {% endif %}
 </body>
 </html>
