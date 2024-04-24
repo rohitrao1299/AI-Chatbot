@@ -1,23 +1,25 @@
-<!DOCTYPE html>
-<html>
-<head>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <title>AI Image Generator</title>
-</head>
-<body>
+  </head>
+  <body>
     <h1>AI Image Generator</h1>
     <form action="/generate" method="post">
-        <!-- No need for a text input field since the prompt is defined in the Python code -->
-        <input type="submit" value="Generate Image">
+      <button type="submit">Generate Image</button>
     </form>
-
-    <!-- Form for story submission -->
-    <form action="/submit_story" method="post" enctype="multipart/form-data">
-        <input type="hidden" name="image_filename" value="{{ image_filename }}">
-        <label for="story">Enter your story:</label><br>
-        <textarea name="story" id="story" rows="4" cols="50"></textarea><br>
-        <input type="submit" value="Submit Story">
+    <hr>
+    <h2>Write Your Story</h2>
+    <form action="/submit_story" method="post">
+      <textarea name="story" id="story" rows="10" cols="30"></textarea><br>
+      {% if error %}
+        <p style="color: red;">{{ error }}</p>
+      {% endif %}
+      <input type="submit" value="Submit Story">
     </form>
-
     <!-- Display the generated image and its filename -->
     {% if image_filename %}
         <h2>Generated Image:</h2>

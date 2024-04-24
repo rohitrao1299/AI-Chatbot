@@ -1,5 +1,5 @@
 import random
-from flask import Flask, render_template, request, send_file, send_from_directory
+from flask import Flask, flash, render_template, request, send_file, send_from_directory
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
 import torch
 import io
@@ -85,7 +85,10 @@ def generate():
 @app.route('/submit_story', methods=['POST'])
 def submit_story():
     if request.method == 'POST':
-        story = request.form['story']
+        story = request.form.get('story', '')
+        if not story:
+            error = 'Please fill out this form'
+            return render_template('home.html', error=error)
         return 'Story submitted successfully!'
 
 # Define the home page route
