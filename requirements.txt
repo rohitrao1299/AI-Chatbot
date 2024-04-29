@@ -7,3 +7,9 @@ diffusers
 torch
 accelerate
 transformers
+pypdf
+langchainhub
+faiss-cpu
+langchain
+sentence-transformers
+

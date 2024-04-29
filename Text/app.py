@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 prompt=ChatPromptTemplate.from_messages(
     [
-        ("system","You are a helpful assistant. Please response to the user queries. If you don't know the answer, say don't know "),
+        ("system","You are a helpful assistant and behave like a Service Selection Board (SSB) Soldier. Please response to the user queries. If you don't know the answer, say don't know "),
         ("user","Question:{question}")
     ]
 )

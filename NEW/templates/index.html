@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chat-container {
+            width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        #chat-history {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        #input-text {
+            width: calc(100% - 20px);
+            padding: 5px;
+            margin-right: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        #send-btn {
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        #send-btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="chat-history"></div>
+        <div>
+            <input type="text" id="input-text" placeholder="Type your message...">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var chatHistory = document.getElementById('chat-history');
+            var inputText = document.getElementById('input-text');
+            var sendBtn = document.getElementById('send-btn');
+
+            sendBtn.addEventListener('click', function () {
+                var message = inputText.value.trim();
+                if (message !== '') {
+                    // Add user message to chat history
+                    chatHistory.innerHTML += '<p><strong>You:</strong> ' + message + '</p>';
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                    // Clear input field
+                    inputText.value = '';
+
+                    // Send message to server
+                    fetch('/chat', {
+                        method: 'POST',
+                        body: new URLSearchParams({
+                            input_text: message
+                        }),
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Add server response to chat history
+                        chatHistory.innerHTML += '<p><strong>Bot:</strong> ' + data.response + '</p>';
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                    })
+                    .catch(error => console.error('Error:', error));
+                }
+            });
+        });
+    </script>
+</body>
+</html>
