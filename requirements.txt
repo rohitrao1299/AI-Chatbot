@@ -12,4 +12,5 @@ langchainhub
 faiss-cpu
 langchain
 sentence-transformers
+bs4
 

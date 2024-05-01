@@ -2,7 +2,7 @@ from flask import Flask, jsonify, render_template, request
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import Ollama
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 import pypdf
@@ -32,9 +32,24 @@ for file_path in glob.glob("DATA/*.pdf"):
         print(f"Error loading {file_path}: {e}")
         continue
 
+## Load web pages from multiple URLs
+web_loaders = []
+urls = ["https://www.thehindu.com/",
+         "https://www.nytimes.com/", 
+         "https://www.bbc.com/"]
+for url in urls:
+    web_loader = WebBaseLoader(url)
+    web_loaders.append(web_loader)
+
+web_documents = []
+for loader in web_loaders:
+    web_documents.extend(loader.load())    
+
+## Combine PDF and web documents
 documents = []
 for loader in pdf_loader:
     documents.extend(loader.load())
+documents.extend(web_documents)
 
 ## Create a text splitter
 text_splitter = CharacterTextSplitter(separator=" ", chunk_size=1000, chunk_overlap=200)
