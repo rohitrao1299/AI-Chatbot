@@ -2,16 +2,17 @@ from flask import Flask, jsonify, render_template, request
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import Ollama
-from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
+from langchain_community.document_loaders import DocumentLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-import pypdf
+import pdfminer
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
 import os
 from dotenv import load_dotenv
 import sqlite3
 import glob
+from bs4 import BeautifulSoup
+import requests
 
 load_dotenv()
 
@@ -19,16 +20,18 @@ os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 os.environ["HUGGING_FACE_TOKEN"] = os.getenv("HUGGING_FACE_TOKEN")  
 
-
 app = Flask(__name__)
 
 ## Load PDFs from DATA folder
 pdf_loader = []
 for file_path in glob.glob("DATA/*.pdf"):
     try:
-        loader = PyPDFLoader(file_path)
-        pdf_loader.append(loader)
-    except pypdf.errors.PdfReadError as e:
+        with open(file_path, 'rb') as f:
+            parser = pdfminer.PDFParser(f)
+            document = pdfminer.PDFDocument(parser)
+            loader = DocumentLoader(document)
+            pdf_loader.append(loader)
+    except pdfminer.PDFSyntaxError as e:
         print(f"Error loading {file_path}: {e}")
         continue
 
@@ -38,7 +41,9 @@ urls = ["https://www.thehindu.com/",
          "https://www.nytimes.com/", 
          "https://www.bbc.com/"]
 for url in urls:
-    web_loader = WebBaseLoader(url)
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    web_loader = DocumentLoader(soup.get_text())
     web_loaders.append(web_loader)
 
 web_documents = []
@@ -93,20 +98,31 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    input_text = request.form['input_text']
-    question = input_text
-
-    # Get similar documents based on the user's question
-    documents = get_similar_documents(question)
-
-    # Invoke the chain with the user's question and relevant documents
-    response = chain.invoke({"question": question, "documents": documents})
-
-    # Save chat history
+    input_text = request.form.get('input_text')
+    if input_text:
+        question = input_text
+        # Get similar documents based on the user's question
+        documents = get_similar_documents(question)
+        # Invoke the chain with the user's question and relevant documents
+        response = chain.invoke({"question": question, "documents": documents})
+    else:
+        import speech_recognition as sr
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            audio = r.listen(source)
+            try:
+                input_text = r.recognize_google(audio, language="en-IN")
+                question = input_text
+                # Get similar documents based on the user's question
+                documents = get_similar_documents(question)
+                # Invoke the chain with the user's question and relevant documents
+                response = chain.invoke({"question": question, "documents": documents})
+            except sr.UnknownValueError:
+                response = "Sorry, I didn't understand what you said."
+            except sr.RequestError as e:
+                response = "Error: " + str(e)
     save_chat_history(input_text, response)
-
     return jsonify({'response': response})
-
 def save_chat_history(input_text, response):
     conn = sqlite3.connect('chat_history.db')
     c = conn.cursor()

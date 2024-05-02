@@ -6,6 +6,7 @@ from langchain_community.llms import Ollama
 import os
 from dotenv import load_dotenv
 import sqlite3
+import speech_recognition as sr
 
 load_dotenv()
 
@@ -18,7 +19,7 @@ app = Flask(__name__)
 
 prompt=ChatPromptTemplate.from_messages(
     [
-        ("system","You are a helpful assistant and behave like a Service Selection Board (SSB) Soldier. Please response to the user queries. If you don't know the answer, say don't know "),
+        ("system","You are a helpful assistant. Please response to the user queries. If you don't know the answer, say don't know "),
         ("user","Question:{question}")
     ]
 )
@@ -34,8 +35,20 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    input_text = request.form['input_text']
-    response = chain.invoke({"question":input_text})
+    input_text = request.form.get('input_text')
+    if input_text:
+        response = chain.invoke({"question":input_text})
+    else:
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            audio = r.listen(source)
+            try:
+                input_text = r.recognize_google(audio, language="en-IN")
+                response = chain.invoke({"question":input_text})
+            except sr.UnknownValueError:
+                response = "Sorry, I didn't understand what you said."
+            except sr.RequestError as e:
+                response = "Error: " + str(e)
     save_chat_history(input_text, response)
     return jsonify({'response': response})
 

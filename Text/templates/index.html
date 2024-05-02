@@ -9,13 +9,41 @@
     <div class="container">
         <h1>Langchain API Demo With LLAMA2</h1>
         <form action="/chat" method="post">
-            <input type="text" name="input_text" placeholder="Search the topic u want">
+            <input type="text" name="input_text" id="input-text" placeholder="Search the topic u want" autocomplete="off">
+            <button type="button" id="voice-btn">Voice</button>
             <button type="submit">Submit</button>
         </form>
         <div id="chat-history"></div>
     </div>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        const inputText = document.getElementById('input-text');
+        const voiceBtn = document.getElementById('voice-btn');
+
+        // Check if the browser supports SpeechRecognition
+        if ('webkitSpeechRecognition' in window) {
+            const recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+
+            voiceBtn.addEventListener('click', () => {
+                recognition.start();
+            });
+
+            recognition.onresult = (event) => {
+                const resultIndex = event.resultIndex;
+                const transcript = event.results[resultIndex][0].transcript;
+
+                inputText.value = transcript;
+            };
+
+            recognition.onend = () => {
+                inputText.focus();
+            };
+        } else {
+            voiceBtn.style.display = 'none';
+        }
+
         $(document).ready(function() {
             $('form').on('submit', function(e) {
                 e.preventDefault();
