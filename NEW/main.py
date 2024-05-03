@@ -1,3 +1,4 @@
+import datetime
 from flask import Flask, jsonify, render_template, request
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -7,18 +8,20 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 import pypdf
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
 import os
 from dotenv import load_dotenv
 import sqlite3
 import glob
+from apscheduler.schedulers.background import BackgroundScheduler
+import logging
 
 load_dotenv()
+logging.basicConfig(filename='app.log', level=logging.DEBUG)
+
 
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 os.environ["HUGGING_FACE_TOKEN"] = os.getenv("HUGGING_FACE_TOKEN")  
-
 
 app = Flask(__name__)
 
@@ -37,13 +40,18 @@ web_loaders = []
 urls = ["https://www.thehindu.com/",
          "https://www.nytimes.com/", 
          "https://www.bbc.com/"]
-for url in urls:
-    web_loader = WebBaseLoader(url)
-    web_loaders.append(web_loader)
-
 web_documents = []
-for loader in web_loaders:
-    web_documents.extend(loader.load())    
+
+def update_web_documents():
+    global web_documents
+    web_documents = []
+    for url in urls:
+        web_loader = WebBaseLoader(url)
+        web_documents.extend(web_loader.load())
+    logging.info("Web documents updated at %s", datetime.datetime.now())
+    print("Web documents updated:", len(web_documents))  
+
+update_web_documents()
 
 ## Combine PDF and web documents
 documents = []
@@ -128,5 +136,10 @@ def save_chat_history(input_text, response):
     conn.commit()
     conn.close()
 
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=update_web_documents, trigger="interval", hours=8)
+scheduler.start()
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    logging.basicConfig(filename='app.log', level=logging.INFO)
+    app.run(debug=True, host='0.0.0.0', port=5000)
