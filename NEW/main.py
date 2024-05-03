@@ -1,5 +1,6 @@
 import datetime
 from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import Ollama
@@ -24,7 +25,7 @@ os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 os.environ["HUGGING_FACE_TOKEN"] = os.getenv("HUGGING_FACE_TOKEN")  
 
 app = Flask(__name__)
-
+CORS(app)
 ## Load PDFs from DATA folder
 pdf_loader = []
 for file_path in glob.glob("DATA/*.pdf"):
