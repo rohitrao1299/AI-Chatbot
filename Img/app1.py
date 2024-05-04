@@ -50,8 +50,8 @@ def generate_image_using_stable_diffusion(prompt):
 
     # Apply transformations to generate black & white and blur features
     bw_layer = image.convert('L')  # Convert to black & white
-    # blur_layer = image.filter(ImageFilter.GaussianBlur(radius=5))  # Apply Gaussian blur
-    # sketch_layer = image.filter(ImageFilter.FIND_EDGES)  # Apply edge detection (sketch effect)
+    blur_layer = image.filter(ImageFilter.GaussianBlur(radius=5))  # Apply Gaussian blur
+    sketch_layer = image.filter(ImageFilter.FIND_EDGES)  # Apply edge detection (sketch effect)
 
 
     # Create a new image with the same size and mode as the original image
@@ -59,8 +59,8 @@ def generate_image_using_stable_diffusion(prompt):
 
     # Combine the two layers into the new image
     new_image.paste(bw_layer, (0, 0))
-    # new_image.paste(blur_layer, (0, 0))
-    # new_image.paste(sketch_layer, (0, 0))
+    new_image.paste(blur_layer, (0, 0))
+    new_image.paste(sketch_layer, (0, 0))
 
     return new_image
 
