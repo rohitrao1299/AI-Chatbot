@@ -58,8 +58,9 @@ def save_chat_history(input_text, response):
     conn = sqlite3.connect('chat_history.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS chat_history
-                 (input_text TEXT, response TEXT)''')
-    c.execute("INSERT INTO chat_history VALUES (?,?)", (input_text, response))
+             (input_text TEXT, response TEXT)''')
+
+    c.execute("INSERT INTO chat_history (input_text, response) VALUES (?, ?)", (input_text, response))
     conn.commit()
     conn.close()
 
