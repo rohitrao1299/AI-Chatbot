@@ -13,4 +13,6 @@ faiss-cpu
 langchain
 sentence-transformers
 bs4
+PyPDF2
+pdfplumber
 
