@@ -1,41 +1,144 @@
+import sqlite3
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
+import os
+from dotenv import load_dotenv
+import requests
+from bs4 import BeautifulSoup
+import random
+import PyPDF2
+import io
+import speech_recognition as sr
+from werkzeug.utils import secure_filename
+import PIL
+from PIL import Image, ImageEnhance, ImageFilter
+
+# Flask App Initialization
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes in your Flask app
+
+# Load environment variables
+load_dotenv()
+
+# Language Model Setup
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import Ollama
-import os
-from dotenv import load_dotenv
-import sqlite3
-import speech_recognition as sr
-import random
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
-import torch
-import io
-import PIL
-from PIL import Image, ImageEnhance, ImageFilter
 
-load_dotenv()
 
-os.environ["LANGCHAIN_TRACING_V2"]="true"
-os.environ["LANGCHAIN_API_KEY"]=os.getenv("LANGCHAIN_API_KEY")
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes in your Flask app
-
-## Prompt Template
-
-prompt=ChatPromptTemplate.from_messages(
+# Prompt Template for Language Model
+prompt = ChatPromptTemplate.from_messages(
     [
-        ("system","You are a helpful assistant. Please response to the user queries. If you don't know the answer, say don't know "),
-        ("user","Question:{question}")
+        ("system", "You are a helpful assistant. Please response to the user queries. Give response from the uploaded pdf also if ask question from their own . If you don't know the answer, say don't know "),
+        ("user", "Question:{question}")
     ]
 )
 
-## LLAMA2 LLm
-llm=Ollama(model="llama2")
-output_parser=StrOutputParser()
-chain=prompt|llm|output_parser
+# LLM Model
+llm = Ollama(model="llama2")
+output_parser = StrOutputParser()
+chain = prompt | llm | output_parser
+
+# Utility Functions
+
+# Function to summarize URL content
+def summarize_url(url):
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        title = soup.find('title').text
+        meta_description = soup.find('meta', attrs={'name': 'description'})
+        if meta_description:
+            summary = meta_description['content']
+        else:
+            summary = title
+        return summary
+    except Exception as e:
+        return f"Error summarizing URL: {str(e)}"
+
+# Function to save chat history
+def save_chat_history(input_text, response, db_conn):
+    c = db_conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS chat_history (
+        input_text TEXT,
+        response TEXT
+    )
+""")
+    c.execute("INSERT INTO chat_history (input_text, response) VALUES (?,?)", (input_text, response))
+    db_conn.commit()
+
+# Define the upload directory and allowed extensions
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'pdf'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER    
+
+# Function to check if file extension is allowed
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Function to extract text from PDF
+def extract_text_from_pdf(filename):
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'rb') as pdf_file:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page_num in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_num]
+            text += page.extract_text()
+    return text
+
+# Flask App Routes
+
+@app.route('/')
+def index():
+    return render_template('home.html')
+
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    input_text = request.form.get('input_text')
+    if not input_text:
+        return jsonify({'response': "No input provided"})
+
+    db_conn = sqlite3.connect('summarize_history.db')
+    try:
+        if input_text.startswith('http'):  # Check if input is a URL
+            response = summarize_url(input_text)
+        else:
+            response = "I can only summarize links. Please provide a URL."
+        save_chat_history(input_text, response, db_conn)
+        return jsonify({'response': response})
+    except Exception as e:
+        return jsonify({'response': f"Error: {str(e)}"})
+    finally:
+        db_conn.close()
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    input_text = request.form.get('input_text')
+    if input_text:
+        response = chain.invoke({"question": input_text})
+    else:
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            audio = r.listen(source)
+            try:
+                input_text = r.recognize_google(audio, language="en-IN")
+                response = chain.invoke({"question": input_text})
+            except sr.UnknownValueError:
+                response = "Sorry, I didn't understand what you said."
+            except sr.RequestError as e:
+                response = "Error: " + str(e)
+    db_conn = sqlite3.connect('chat_history.db')  # Establish database connection
+    save_chat_history(input_text, response, db_conn)  # Pass db_conn as argument
+    db_conn.close()  # Close database connection after saving chat history
+    return jsonify({'response': response})
+
 
 # Define the prompts for image generation
 PROMPTS = [
@@ -93,34 +196,6 @@ def generate_image_using_stable_diffusion(prompt):
 
     return new_image
 
-@app.route('/chat', methods=['POST'])
-def chat():
-    input_text = request.form.get('input_text')
-    if input_text:
-        response = chain.invoke({"question":input_text})
-    else:
-        r = sr.Recognizer()
-        with sr.Microphone() as source:
-            audio = r.listen(source)
-            try:
-                input_text = r.recognize_google(audio, language="en-IN")
-                response = chain.invoke({"question":input_text})
-            except sr.UnknownValueError:
-                response = "Sorry, I didn't understand what you said."
-            except sr.RequestError as e:
-                response = "Error: " + str(e)
-    save_chat_history(input_text, response)
-    return jsonify({'response': response})
-
-def save_chat_history(input_text, response):
-    conn = sqlite3.connect('chat_history.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS chat_history
-                 (input_text TEXT, response TEXT)''')
-    c.execute("INSERT INTO chat_history VALUES (?,?)", (input_text, response))
-    conn.commit()
-    conn.close()
-
 @app.route('/generate', methods=['POST'])
 def generate():
     if request.method == 'POST':
@@ -135,14 +210,31 @@ def generate():
         img_io.seek(0)
 
         # Return the generated image as a response
-        return send_file(img_io, mimetype='image/jpeg')
+        # return send_file(img_io, mimetype='image/jpeg')
+        return img_io.getvalue(), 200, {'Content-Type': 'image/jpeg'}
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'})
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        return jsonify({'response': "PDF file uploaded successfully. You can now start asking questions."})
+    return jsonify({'error': 'Invalid file format'})
 
-
-# Define the home page route
-@app.route('/')
-def home():
-    return render_template('home.html')
+@app.route('/ask_question', methods=['POST'])
+def ask_question():
+    input_text = request.form.get('input_text')
+    if input_text:
+        response = chain.invoke({"question": input_text})
+    else:
+        response = "Please provide a question."
+    save_chat_history(input_text, response)
+    return jsonify({'response': response})
 
 if __name__ == '__main__':
     app.run(debug=True)
