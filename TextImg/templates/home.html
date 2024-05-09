@@ -1,22 +1,129 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>AI Assistant and Image Generation</title>
-  </head>
-  <body>
-    <h1>AI Assistant and Image Generation</h1>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask App</title>
+</head>
+<body>
+    <h1>Welcome to Flask App</h1>
+    <h2>Chat Interface</h2>
+    <div>
+        <textarea id="input_text" rows="4" cols="50" placeholder="Enter your text here..."></textarea>
+        <button onclick="sendChat()">Send Text</button>
+        <button onclick="startVoiceRecognition()">Start Voice</button>
+    </div>
+    <div id="chat_response"></div>
 
-    <h2>AI Assistant</h2>
-    <form action="/chat" method="post">
-      <textarea name="input_text" rows="4" cols="50"></textarea><br>
-      <input type="submit" value="Submit">
+    <h2>File Upload</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" id="file">
+        <input type="submit" value="Upload">
     </form>
 
-    <h2>Image Generation</h2>
-    <form action="/generate" method="post">
-      <input type="submit" value="Generate Image">
-    </form>
+    <h2>Generate Image</h2>
+    <button onclick="generateImage()">Generate Image</button>
+    <div id="image_container"></div> <!-- Container div for the generated image -->
 
-  
-  </body>
+    <h2>Summarize Link</h2>
+    <div>
+        <input type="text" id="link" placeholder="Enter a URL to summarize...">
+        <button onclick="summarizeLink()">Summarize</button>
+    </div>
+    <div id="summary_response"></div> <!-- Added this div to display summary response -->
+
+    <h2>Generate Multiple Choice Questions</h2>
+    <div>
+        <textarea id="mcq_input_text" rows="4" cols="50" placeholder="Enter your text here..."></textarea>
+        <button onclick="generateMCQs()">Generate MCQs</button>
+    </div>
+    <div id="mcq_response"></div> <!-- Added this div to display MCQs -->
+
+    <script>
+        function sendChat() {
+            var inputText = document.getElementById("input_text").value;
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/chat", true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    document.getElementById("chat_response").innerHTML += "<p><strong>You:</strong> " + inputText + "</p>";
+                    document.getElementById("chat_response").innerHTML += "<p><strong>Bot:</strong> " + response.response + "</p>";
+                }
+            };
+            xhr.send("input_text=" + inputText);
+        }
+
+        function startVoiceRecognition() {
+            var recognition = new webkitSpeechRecognition();
+            recognition.lang = "en-IN";
+
+            recognition.onresult = function(event) {
+                var transcript = event.results[0][0].transcript;
+                document.getElementById("input_text").value = transcript;
+            }
+
+            recognition.onend = function() {
+                sendChat();
+            }
+
+            recognition.start();
+        }
+
+        function generateImage() {
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/generate", true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                    var imgData = xhr.response;
+                    var imageUrl = URL.createObjectURL(new Blob([imgData], { type: 'image/jpeg' }));
+                    var imageElement = document.createElement('img');
+                    imageElement.src = imageUrl;
+                    document.getElementById("image_container").innerHTML = ''; // Clear previous image
+                    document.getElementById("image_container").appendChild(imageElement); // Append new image
+                }
+            };
+            xhr.responseType = 'arraybuffer';
+            xhr.send();
+        }
+
+        function summarizeLink() {
+            var link = document.getElementById("link").value;
+            if (link) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", "/summarize", true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                        var response = JSON.parse(xhr.responseText);
+                        document.getElementById("summary_response").innerHTML = "<p><strong>Summary:</strong> " + response.response + "</p>";
+                    }
+                };
+                xhr.send("input_text=" + link);
+            } else {
+                alert("Please enter a URL to summarize.");
+            }
+        }
+
+        function generateMCQs() {
+            var inputText = document.getElementById("mcq_input_text").value;
+            if (inputText) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", "/generate_mcqs", true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                        var response = JSON.parse(xhr.responseText);
+                        var mcqs = response.mcqs.join("<br>");
+                        document.getElementById("mcq_response").innerHTML = "<p><strong>MCQs:</strong> " + mcqs + "</p>";
+                    }
+                };
+                xhr.send("input_text=" + inputText);
+            } else {
+                alert("Please enter text to generate MCQs.");
+            }
+        }
+    </script>
+</body>
 </html>
