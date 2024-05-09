@@ -51,15 +51,30 @@ def summarize_url(url):
     try:
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract title
         title = soup.find('title').text
+        
+        # Extract meta description
         meta_description = soup.find('meta', attrs={'name': 'description'})
         if meta_description:
             summary = meta_description['content']
         else:
             summary = title
-        return summary
+        
+        # Extract text content from paragraphs
+        paragraphs = soup.find_all('p')
+        # Wrap each paragraph in <p> tags
+        paragraph_texts = [f"<p>{p.text.strip()}</p>" for p in paragraphs]
+        
+        # Combine title, meta description, and text content to form the summary
+        full_summary = f"<p>Title: {title}</p>\n\n<p>Summary: {summary}</p>\n\n<p>Content:</p>\n{''.join(paragraph_texts)}"
+        
+        return full_summary
     except Exception as e:
         return f"Error summarizing URL: {str(e)}"
+
+
 
 # Function to save chat history
 def save_chat_history(input_text, response, db_conn):
@@ -117,6 +132,11 @@ def summarize():
         return jsonify({'response': f"Error: {str(e)}"})
     finally:
         db_conn.close()
+
+
+
+
+
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -217,7 +237,7 @@ def generate():
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'})
-    file = request.files['file']
+    file = request.files.get('file')  # Use request.files.get('file') to get the file object
     if file.filename == '':
         return jsonify({'error': 'No selected file'})
     if file and allowed_file(file.filename):
@@ -225,6 +245,7 @@ def upload_file():
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         return jsonify({'response': "PDF file uploaded successfully. You can now start asking questions."})
     return jsonify({'error': 'Invalid file format'})
+
 
 @app.route('/ask_question', methods=['POST'])
 def ask_question():
@@ -235,6 +256,29 @@ def ask_question():
         response = "Please provide a question."
     save_chat_history(input_text, response)
     return jsonify({'response': response})
+
+# Define the prompts for generating multiple-choice questions
+mcq_prompt = ChatPromptTemplate.from_messages([
+    ("user", "Generate multiple-choice questions:\n\n{text}")
+])
+
+# Define Ollama model for MCQ generation
+ollama_mcq_model = Ollama(model="llama2")
+output_parser_mcq = StrOutputParser()
+mcq_chain = mcq_prompt | ollama_mcq_model | output_parser_mcq
+
+@app.route('/generate_mcqs', methods=['POST'])
+def generate_mcqs():
+    input_text = request.json.get('input_text')  # Access JSON data instead of form data
+    if input_text:
+        # Generate MCQs using Ollama (LLama2) model
+        mcq_response = mcq_chain.invoke({"text": input_text})
+        mcqs = mcq_response.strip().split('\n')
+        return jsonify({'mcqs': mcqs})
+    else:
+        return jsonify({'error': 'Please provide input text'})
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
