@@ -45,48 +45,44 @@ output_parser = StrOutputParser()
 chain = prompt | llm | output_parser
 
 # Utility Functions
-
+import json
 # Function to summarize URL content
 def summarize_url(url):
     try:
         response = requests.get(url)
         soup = BeautifulSoup(response.text, 'html.parser')
-        
+
         # Extract title
         title = soup.find('title').text
-        
+
         # Extract meta description
         meta_description = soup.find('meta', attrs={'name': 'description'})
         if meta_description:
             summary = meta_description['content']
         else:
             summary = title
-        
+
+        # Filter out unwanted elements (prices and ratings)
+        for unwanted in soup.select('.price, .rating'):
+            unwanted.extract()
+
         # Extract text content from paragraphs
         paragraphs = soup.find_all('p')
-        # Wrap each paragraph in <p> tags
-        paragraph_texts = [f"<p>{p.text.strip()}</p>" for p in paragraphs]
-        
+        text_content = ' '.join([p.text.strip() for p in paragraphs])
+
         # Combine title, meta description, and text content to form the summary
-        full_summary = f"<p>Title: {title}</p>\n\n<p>Summary: {summary}</p>\n\n<p>Content:</p>\n{''.join(paragraph_texts)}"
-        
+        full_summary = {
+            'Title': title,
+            'Summary': summary,
+            'Content': text_content
+        }
+
         return full_summary
     except Exception as e:
-        return f"Error summarizing URL: {str(e)}"
+        return {"error": f"Error summarizing URL: {str(e)}"}
 
 
 
-# Function to save chat history
-def save_chat_history(input_text, response, db_conn):
-    c = db_conn.cursor()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS chat_history (
-        input_text TEXT,
-        response TEXT
-    )
-""")
-    c.execute("INSERT INTO chat_history (input_text, response) VALUES (?,?)", (input_text, response))
-    db_conn.commit()
 
 # Define the upload directory and allowed extensions
 UPLOAD_FOLDER = 'uploads'
@@ -119,19 +115,14 @@ def summarize():
     input_text = request.form.get('input_text')
     if not input_text:
         return jsonify({'response': "No input provided"})
-
-    db_conn = sqlite3.connect('summarize_history.db')
     try:
         if input_text.startswith('http'):  # Check if input is a URL
             response = summarize_url(input_text)
         else:
             response = "I can only summarize links. Please provide a URL."
-        save_chat_history(input_text, response, db_conn)
         return jsonify({'response': response})
     except Exception as e:
         return jsonify({'response': f"Error: {str(e)}"})
-    finally:
-        db_conn.close()
 
 
 
@@ -154,9 +145,6 @@ def chat():
                 response = "Sorry, I didn't understand what you said."
             except sr.RequestError as e:
                 response = "Error: " + str(e)
-    db_conn = sqlite3.connect('chat_history.db')  # Establish database connection
-    save_chat_history(input_text, response, db_conn)  # Pass db_conn as argument
-    db_conn.close()  # Close database connection after saving chat history
     return jsonify({'response': response})
 
 
@@ -253,8 +241,8 @@ def ask_question():
     if input_text:
         response = chain.invoke({"question": input_text})
     else:
-        response = "Please provide a question."
-    save_chat_history(input_text, response)
+        response = "Please provide a question."   
+    
     return jsonify({'response': response})
 
 # Define the prompts for generating multiple-choice questions
@@ -277,6 +265,10 @@ def generate_mcqs():
         return jsonify({'mcqs': mcqs})
     else:
         return jsonify({'error': 'Please provide input text'})
+    
+@app.route('/books',methods=['GET'])
+def books():
+    return "Everything is in books"    
 
 
 
