@@ -45,13 +45,13 @@ PROMPTS = [
 
 # Function to generate AI-based images using Stable Diffusion
 def generate_image_using_stable_diffusion(prompt):
-    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
-    image = pipe(prompt).images[0]
+    pipe = StableDiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-2")
+    image = pipe(prompt,num_inference_steps=7, guidance_scale=7.5).images[0]
 
     # Apply transformations to generate black & white and blur features
     bw_layer = image.convert('L')  # Convert to black & white
-    blur_layer = image.filter(ImageFilter.GaussianBlur(radius=5))  # Apply Gaussian blur
-    sketch_layer = image.filter(ImageFilter.FIND_EDGES)  # Apply edge detection (sketch effect)
+    # blur_layer = image.filter(ImageFilter.GaussianBlur(radius=5))  # Apply Gaussian blur
+    # sketch_layer = image.filter(ImageFilter.FIND_EDGES)  # Apply edge detection (sketch effect)
 
 
     # Create a new image with the same size and mode as the original image
@@ -59,8 +59,8 @@ def generate_image_using_stable_diffusion(prompt):
 
     # Combine the two layers into the new image
     new_image.paste(bw_layer, (0, 0))
-    new_image.paste(blur_layer, (0, 0))
-    new_image.paste(sketch_layer, (0, 0))
+    # new_image.paste(blur_layer, (0, 0))
+    # new_image.paste(sketch_layer, (0, 0))
 
     return new_image
 
@@ -75,7 +75,7 @@ def generate():
         # Convert the image to JPEG format and set the quality
         image_output = image_output.convert('RGB')
         img_io = io.BytesIO()
-        image_output.save(img_io, format='JPEG', quality=85)
+        image_output.save(img_io, format='JPEG', quality=95)
         img_io.seek(0)
 
         # Return the generated image as a response
