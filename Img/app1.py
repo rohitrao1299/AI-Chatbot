@@ -45,8 +45,8 @@ PROMPTS = [
 
 # Function to generate AI-based images using Stable Diffusion
 def generate_image_using_stable_diffusion(prompt):
-    pipe = StableDiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-2")
-    image = pipe(prompt,num_inference_steps=7, guidance_scale=7.5).images[0]
+    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+    image = pipe(prompt,num_inference_steps=12, guidance_scale=7.5).images[0]
 
     # Apply transformations to generate black & white and blur features
     bw_layer = image.convert('L')  # Convert to black & white
