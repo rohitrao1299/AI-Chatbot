@@ -1,30 +1,150 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask App</title>
+</head>
+<body>
+    <h1>Welcome to Flask App</h1>
+    <h2>Chat Interface</h2>
+    <div>
+        <textarea id="input_text" rows="4" cols="50" placeholder="Enter your text here..."></textarea>
+        <button onclick="sendChat()">Send Text</button>
+        <button onclick="startVoiceRecognition()">Start Voice</button>
+    </div>
+    <div id="chat_response"></div>
 
-    <title>AI Image Generator</title>
-  </head>
-  <body>
-    <h1>AI Image Generator</h1>
-    <form action="/generate" method="post">
-      <button type="submit">Generate Image</button>
+    <h2>File Upload</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" id="file">
+        <input type="submit" value="Upload">
     </form>
-    <hr>
-    <h2>Write Your Story</h2>
-    <form action="/submit_story" method="post">
-      <textarea name="story" id="story" rows="10" cols="30"></textarea><br>
-      {% if error %}
-        <p style="color: red;">{{ error }}</p>
-      {% endif %}
-      <input type="submit" value="Submit Story">
-    </form>
-    <!-- Display the generated image and its filename -->
-    {% if image_filename %}
-        <h2>Generated Image:</h2>
-        <img src="{{ url_for('static', filename=image_filename) }}" alt="Generated Image">
-        <p>Filename: {{ image_filename }}</p>
-    {% endif %}
+
+    <h2>Generate Image</h2>
+    <button onclick="generateImage()">Generate Image</button>
+    <div id="image_container"></div> <!-- Container div for the generated image -->
+
+    <h2>Summarize Link</h2>
+    <div>
+        <input type="text" id="link" placeholder="Enter a URL to summarize...">
+        <button onclick="summarizeLink()">Summarize</button>
+    </div>
+    <div id="summary_response"></div> <!-- Added this div to display summary response -->
+
+    <h2>Generate Multiple Choice Questions</h2>
+    <div>
+        <textarea id="mcq_input_text" rows="4" cols="50" placeholder="Enter your text here..."></textarea>
+        <button onclick="generateMCQs()">Generate MCQs</button>
+    </div>
+    <div id="mcq_response"></div> <!-- Added this div to display MCQs -->
+
+    <script>
+        function sendChat() {
+            var inputText = document.getElementById("input_text").value;
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/chat", true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    document.getElementById("chat_response").innerHTML += "<p><strong>You:</strong> " + inputText + "</p>";
+                    document.getElementById("chat_response").innerHTML += "<p><strong>Bot:</strong> " + response.response + "</p>";
+                }
+            };
+            xhr.send("input_text=" + inputText);
+        }
+
+        function startVoiceRecognition() {
+            var recognition = new webkitSpeechRecognition();
+            recognition.lang = "en-IN";
+
+            recognition.onresult = function(event) {
+                var transcript = event.results[0][0].transcript;
+                document.getElementById("input_text").value = transcript;
+            }
+
+            recognition.onend = function() {
+                sendChat();
+            }
+
+            recognition.start();
+        }
+
+        function generateImage() {
+            // var xhr = new XMLHttpRequest();
+            // xhr.open("GET", "/generate", true);
+            // xhr.onreadystatechange = function () {
+            //     if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+            //         var imgData = xhr.response;
+            //         console.log("imgData",imgData)
+            //         var imageUrl = URL.createObjectURL(new Blob([imgData], { type: 'image/jpeg' }));
+            //         console.log("imageUrl",imageUrl)
+            //         var imageElement = document.createElement('img');
+            //         imageElement.src = imageUrl;
+            //         document.getElementById("image_container").innerHTML = ''; // Clear previous image
+            //         document.getElementById("image_container").appendChild(imageElement); // Append new image
+            //     }
+            // };
+            // xhr.responseType = 'arraybuffer';
+            // xhr.send();
+            fetch('/generate')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("data",data);
+                    const imageUrl = data.data;
+                    var imageElement = document.createElement('img');
+                    imageElement.src = imageUrl;
+                    document.getElementById("image_container").innerHTML = ''; // Clear previous image
+                    document.getElementById("image_container").appendChild(imageElement); // Append new image
+                })
+                .catch(error => console.error('Error generating image:', error));
+        }
+
+        function summarizeLink() {
+    var link = document.getElementById("link").value;
+    if (link) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/summarize", true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                var response = JSON.parse(xhr.responseText);
+                if (response.error) {
+                    document.getElementById("summary_response").innerHTML = "<p><strong>Error:</strong> " + response.error + "</p>";
+                } else {
+                    document.getElementById("summary_response").innerHTML = "<p><strong>Title:</strong> " + response.response.Title + "</p>";
+                    document.getElementById("summary_response").innerHTML += "<p><strong>Summary:</strong> " + response.response.Summary + "</p>";
+                    document.getElementById("summary_response").innerHTML += "<p><strong>Content:</strong> " + response.response.Content + "</p>";
+                }
+            }
+        };
+        xhr.send("input_text=" + link);
+    } else {
+        alert("Please enter a URL to summarize.");
+    }
+}
+
+
+function generateMCQs() {
+    var inputText = document.getElementById("mcq_input_text").value;
+    if (inputText) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/generate_mcqs", true);
+        xhr.setRequestHeader('Content-Type', 'application/json'); // Set content type to JSON
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                var response = JSON.parse(xhr.responseText);
+                var mcqs = response.mcqs.join("<br>");
+                document.getElementById("mcq_response").innerHTML = "<p><strong>MCQs:</strong> " + mcqs + "</p>";
+            }
+        };
+        xhr.send(JSON.stringify({ input_text: inputText })); // Send JSON data
+    } else {
+        alert("Please enter text to generate MCQs.");
+    }
+}
+
+    </script>
 </body>
 </html>
