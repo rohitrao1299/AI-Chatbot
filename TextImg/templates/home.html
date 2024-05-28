@@ -72,34 +72,30 @@
         }
 
         function generateImage() {
-            // var xhr = new XMLHttpRequest();
-            // xhr.open("GET", "/generate", true);
-            // xhr.onreadystatechange = function () {
-            //     if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
-            //         var imgData = xhr.response;
-            //         console.log("imgData",imgData)
-            //         var imageUrl = URL.createObjectURL(new Blob([imgData], { type: 'image/jpeg' }));
-            //         console.log("imageUrl",imageUrl)
-            //         var imageElement = document.createElement('img');
-            //         imageElement.src = imageUrl;
-            //         document.getElementById("image_container").innerHTML = ''; // Clear previous image
-            //         document.getElementById("image_container").appendChild(imageElement); // Append new image
-            //     }
-            // };
-            // xhr.responseType = 'arraybuffer';
-            // xhr.send();
-            fetch('/generate')
+            const categories = ["TAT", "PPDT"];
+            const category = categories[Math.floor(Math.random() * categories.length)];
+        
+            fetch(`/generate?query=${category}`) // Use 'category' instead of 'query'
                 .then(response => response.json())
                 .then(data => {
-                    console.log("data",data);
-                    const imageUrl = data.data;
-                    var imageElement = document.createElement('img');
-                    imageElement.src = imageUrl;
-                    document.getElementById("image_container").innerHTML = ''; // Clear previous image
-                    document.getElementById("image_container").appendChild(imageElement); // Append new image
+                    const imageUrls = data.data;
+                    if (!imageUrls || imageUrls.length === 0) {
+                        console.error("No image URLs found in response data");
+                        return;
+                    }
+                    var imageContainer = document.getElementById("image_container");
+                    imageContainer.innerHTML = ''; // Clear previous images
+                    imageUrls.forEach(imageUrl => {
+                        var imageElement = document.createElement('img');
+                        imageElement.src = imageUrl;
+                        imageContainer.appendChild(imageElement); // Append new image
+                    });
                 })
-                .catch(error => console.error('Error generating image:', error));
+                .catch(error => {
+                    console.error('Error generating image:', error);
+                });
         }
+        
 
         function summarizeLink() {
     var link = document.getElementById("link").value;
