@@ -1,8 +1,5 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
-import io
-import time
-from datetime import datetime, timedelta
 import sqlite3
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
@@ -13,6 +10,8 @@ from bs4 import BeautifulSoup
 import random
 import PyPDF2
 import io
+import time
+from datetime import datetime, timedelta
 import speech_recognition as sr
 import torch
 from werkzeug.utils import secure_filename
@@ -32,23 +31,74 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import Ollama
 from diffusers import DiffusionPipeline, StableDiffusionPipeline
+from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+import pypdf
+from langchain_community.embeddings import HuggingFaceEmbeddings
+import glob
+from langchain_community.document_loaders import PyPDFLoader
+
 
 
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 
-# Prompt Template for Language Model
+# Load PDFs from DATA folder
+pdf_loader = []
+for file_path in glob.glob("DATA/*.pdf"):
+    try:
+        loader = PyPDFLoader(file_path)
+        pdf_loader.append(loader)
+    except pypdf.errors.PdfReadError as e:
+        print(f"Error loading {file_path}: {e}")
+        continue
+
+# Combine PDF documents
+documents = []
+for loader in pdf_loader:
+    documents.extend(loader.load())
+
+# Create a text splitter
+text_splitter = CharacterTextSplitter(separator=" ", chunk_size=1000, chunk_overlap=200)
+
+# Split the documents into chunks
+chunks = text_splitter.split_documents(documents)
+
+# Create a LLM
+llm = Ollama(model="llama2")
+
+# Create a vector store
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2",
+                                   model_kwargs={'device': "cpu"})
+vectorstore = FAISS.from_documents(chunks, embeddings)
+
+# Create a prompt template
+prompt_template = (
+    "You are a helpful assistant. Answer the question based on the following context only:\n"
+    "{context}\n"
+    "If the context does not provide sufficient information, respond with 'The information is not available in the provided documents.'\n"
+    "Question: {question}\n"
+    "Answer:"
+)
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "You are a helpful assistant. Please response to the user queries. Give response from the uploaded pdf also if ask question from their own . If you don't know the answer, say don't know "),
-        ("user", "Question:{question}")
+        ("system", prompt_template)
     ]
 )
 
-# LLM Model
-llm = Ollama(model="llama2")
+# Create an output parser
 output_parser = StrOutputParser()
+
+# Create a chain
 chain = prompt | llm | output_parser
+
+def get_similar_documents(question):
+    # Perform similarity search
+    similar_documents = vectorstore.similarity_search(question)
+    context = ""
+    for doc in similar_documents:
+        context += doc.page_content + "\n"
+    return context
 
 # Utility Functions
 import json
@@ -137,14 +187,33 @@ def summarize():
 def chat():
     input_text = request.form.get('input_text')
     if input_text:
-        response = chain.invoke({"question": input_text})
+        question = input_text
+        # Get similar documents based on the user's question
+        context = get_similar_documents(question)
+        if not context.strip():
+            response = "The information is not available in the provided documents."
+        else:
+            # Prepare the input for the chain
+            input_data = {"context": context, "question": question}
+            # Invoke the chain with the user's question and relevant documents
+            response = chain.invoke(input_data)
     else:
+        import speech_recognition as sr
         r = sr.Recognizer()
         with sr.Microphone() as source:
             audio = r.listen(source)
             try:
                 input_text = r.recognize_google(audio, language="en-IN")
-                response = chain.invoke({"question": input_text})
+                question = input_text
+                # Get similar documents based on the user's question
+                context = get_similar_documents(question)
+                if not context.strip():
+                    response = "The information is not available in the provided documents."
+                else:
+                    # Prepare the input for the chain
+                    input_data = {"context": context, "question": question}
+                    # Invoke the chain with the user's question and relevant documents
+                    response = chain.invoke(input_data)
             except sr.UnknownValueError:
                 response = "Sorry, I didn't understand what you said."
             except sr.RequestError as e:
@@ -183,95 +252,94 @@ PROMPTS = [
     "A vibrant and bustling Indian village, with narrow streets, colorful houses, and a lively marketplace. There are street vendors selling spices, textiles, and handicrafts, as well as a temple, a school, and a community center.",
     "A meeting of the local Indian panchayat, with community leaders and elders gathered to discuss important issues and make decisions that affect the village. There are men and women of all ages, dressed in traditional Indian clothing, sitting in a circle and engaging in respectful and productive dialogue.",
     "A traditional and sustainable Indian village agricultural operation, with small fields of crops, manual irrigation systems, and ox-driven plows. There are farmers working in the fields, planting and harvesting crops by hand, and a community of villagers gathering to share knowledge and resources.",
-    "A cyberpunk hacker with a bright mohawk hairstyle, leather jacket, and cybernetic implants, typing code on a holographic computer",
-  "An astronaut in a sleek white spacesuit planting the American flag on Mars, red dust and rocks in background, Earth visible in sky",
-  "A beautiful female android with long silver hair, glowing blue eyes, pale skin, standing in slick futuristic nightclub",
-  "A scientist in a lab coat developing nanobots, high tech microscopes and equipment in background",
-  "A pilot with an oxygen mask flying a stealth spaceship through dense asteroid field, firing lasers, cockpit visible",
-  "A combat cyborg with black bionic arms playing an electric guitar during an apocalyptic thunderstorm, surrounded by rubble",
-  "A classic robot butler in suit neatly serving tea to elegant lady on hovering chairs in pristine white room with view of cityscape",
-  "An elf ranger with bow aimed, long hair, cloak, armor, standing amid mystical ruins overgrown with vines",
-  "A fierce post-apocalyptic warrior battling mutated beasts in abandoned city streets filled with rubble and overgrown plants",
-  "An engineer building a teleportation device, lab filled with computers, cables, and glowing portal",
-  "A wizard with staff casting a magic spell, mystical runes surrounding, ancient ruins in misty mountains behind",
-  "A pale vampire with fangs at futuristic nightclub filled with bright neon lights, dancing crowd wearing stylish outfits",
-  "A soldier in futuristic armor aiming a laser rifle, muzzle flash visible, battlefield filled with smoke behind",
-  "A young hacker programming holographic computer displaying complex code, warehouse with graffiti and high tech equipment around",
-  "A samurai with robotic armor and laser katana fighting an enormous, fire-breathing dragon roaring",
-  "A muscular mutant superhero with chainsawed arms rescuing humans from the rubble of a collapsed building",
-  "A steampunk inventor wearing goggles tinkering on a mechanical robot as gears turn, pipes vent steam in workshop",
-  "A Jedi Knight wielding a lightsaber leaving a trail of light, facing off against an enemy with a red lightsaber in nighttime forest",
-  "A pilot controlling a large battle mech, engaging enemy robots and tanks on city streets filled with explosions",
-  "A cowboy with facemask riding a galloping robotic horse with rocket boosters through the desert near pyramids and a spaceship crash site",
-  "A beautiful cyborg DJ at flashy neon rave wearing LED glasses and arm implants, deadmau5-style helmet, operating glowing holographic turntables",
-  "A smiling girl hugging her tall, lean four-legged robot dog with screens for eyes in a sunny green meadow dotted with flowers",
-  "A classic square robot with an artist's beret carefully painting an abstract picture on canvas in art studio with paint tubes and brushes",
-  "A ninja assassin clad in black with masks leaping between high tech skyscrapers at night, throwing knives at armored target",
-  "An old wizard with long white beard wearing robes and pointed hat riding a sleek, colorful hoverboard through mysterious ruins",
-  "A hacker jacked into virtual reality, coding on screens displaying cyberspace environment with digital rain and architectural structures",
-  "A female elf ranger with bow crouching in vivid lush forest with sunlight streaming through the trees behind her",
-  "A neural-linked gamer wearing a headset controlling a humanoid robot fighting in global tournament arena filled with drones and holographic crowds",
-  "A diverse crew including humans, cyborgs, androids on the bridge of an exploratory starship venturing into deep space about to engage warp speed, captain in center seat",
-  "An android with exposed machinery playing speed chess with a human opponent in slick room with bookshelves and trophy case",
-  "A girl befriending a cute fluffy alien with large dark eyes sitting together among grass and alien mushrooms glowing under beautiful night sky",
-  "A scientist injecting himself with experimental nanomachines, body merging with mechanical parts with blue glow visible through seams in skin",
-  "A shiny humanoid robot with tracks instead of legs exploring Mars desert, red rocks and cliffs visible under orange sky",
-  "A futuristic spaceship with glowing engines engaging warp speed, leaving stretched star trails behind approaching massive gas giant planet with rings",
-  "A young hacker programming next-gen AI displaying code on multiple holographic screens inside warehouse with graffiti",
-  "A battlefield depicting the aftermath of a violent robot uprising against humans, damaged machinery leaking oil and sparks among rubble",
-  "A sleek cyborg assassin levitating off the ground using built-in antigravity tech, surrounded by floating holographic data streams in dark room",
-  "An astronaut in advanced spacesuit taking first step onto surface of inhabitable exoplanet, expansive vista of alien landscape and sky visible ",
-  "A biohacker in makeshift basement lab injecting neon glowing DNA vials, genetic engineering equipment with blinking screens around",
-  "A smiling girl engaging in friendly conversation with a hovering orb-shaped AI displaying animated expressions - cityscape visible through windows behind",
-  "A classic robot butler in suit neatly serving tea to masked elites seated on hovering chairs in pristine penthouse suite with expansive city views",
-  "A futuristic battleship leading a small fleet against a larger mothership over earth, visible in background through cockpit window, firing bright weapons leaving glowing trails",
-  "An android with exposed machinery thoroughly engrossed in playing immersive sci-fi virtual reality game, cables linking body to computer servers",
-  "A hoverbike gang riding sleek colorful bikes leaving neon trails through nighttime city streets lined with holographic billboards and signs",
-  "A hacker jacked into the virtual architecture of a sinister megacorporation consisting of ominous towering structures, coding on screens showing cyberspace",
-  "A scientist developing neural implants and prosthetic limbs for radical new human augmentation procedures in lab filled with computers, robotic arms, and vials",
-  "A fighter pilot targeting enemy attack drones during intense aerial dogfight, firing missiles while performing evasive maneuvers, wings of advanced jet visible in cockpit",
-  "A shapeshifting assassin android impersonating a human to infiltrate high-security gala, preparing to draw handgun concealed under elegant evening gown",
-  "A damaged explorer robot examining mysterious glowing hieroglyphs inside ancient towering alien ruins, strange structures and technologies overgrown with vines behind",
-  "The crew of a sleek exploratory starship entering cryogenic pods before faster-than-light journey, automated systems visible maintaining ship operations",
-  "A hooded hacker decrypting data stolen from crash-landed alien scout ship, strings of symbols on computer screens inside warehouse with graffiti and exposed brick",
-  "A smiling girl affectionately hugging cute short robot companion with blinking monitor for a face, grass and blue sky in background",
-  "An astronaut triumphantly planting American flag on surface of Mars, bootprints in red soil with Earth visible in orange sky above",
-  "A scientist carefully monitoring array of computer servers, cables linking equipment to jar with synthetic brain inside glowing yellow liquid",
-  "A female android wearing 1950s style uniform smiling while efficiently serving milkshakes to laughing customers at neon-lit diner with spaceship visible through window",
-  "A pilot in advanced spacesuit ejecting from cockpit of experimental aircraft, firing built-in rocket boosters, flames and smoke trails visible behind",
-  "A hacker stealing corporate secrets in virtual reality representation of office tower, coding on screens showing cyberspace architecture",
-  "A menacing cyborg with half its head replaced by glowing machinery playing chess against an unbeatable AI supercomputer in sleek room",
-  "A genetically engineered dinosaur with spiked tail kept on chain leash by soldier in futuristic armor, abandoned buildings visible behind rubble",
-  "A classic robot butler managing smart home, efficient serving dinner to family while monitoring various devices and appliances simultaneously",
-  "The crew of a Federation starship including humans, aliens, androids gathering for first contact ritual, bridge filled with slick interfaces, planet visible through window",
-  "An assassin android impersonating doctor to infiltrate prison, readying lethal injection hidden in coat",
-  "An affectionate girl gently embracing her dog-sized robot companion with tank treads and a single blinking eye for a head",
-  "A muscular cyborg prize fighter covered in tattoos and cybernetics battling a menacing opponent in caged arena surrounded by cheering audience",
-  "A wizard experimenting with combining futuristic tech like forcefields, levitation, and advanced genetics with magical essences, artifacts, and spellbooks",
-  "The crew of a exploratory vessel looking shocked as their ship is flung into the outer solar system after narrowly surviving an experimental faster than light engine misjump",
-  "A hacker manipulating global stock prices with orbital quantum computer running advanced AI stock trading algorithms, screens displaying dizzying data dashboards",
-  "A musician directing an orchestra made up of various aliens including tall, elegant bird-like creatures playing lyrical stringed instruments",
-  "A barely functioning explorer robot caked in red dust examining strange slimy liquid oozing from orifices of biomechanical structures half-buried on hellish volcanic Venusian surface",
-  "A massive battlecruiser firing all weapons against reptilian capital ship in orbit over gas giant planet with swirling eyes and many moons while several smaller craft are destroyed around it",
-  "An astronaut spacewalking outside slowly rotating space station near luminous nebula, performing repairs on damaged solar panel torn open by micrometeorite",
-  "A scientist overseeing construction of a microscopic nanobot swarm designed for programmable biological editing, petri dishes filled with the bots visible under microscopes",
-  "An alien ambassador with large head, slender body, big glossy eyes signing treaty documents as cameras flash at gathering of various press and leaders in front of United Nations building with flags out front",
-  "A smiling blonde female android wearing 1950's uniform roller skating around flashing neon diner taking orders from seated customers which include aliens and robots",
-  "The crew of the starship Galileo looking stunned by large creature on viewscreen rumbling deep incomprehensible noises during tense first contact event on planet with pink sky visible from hull",
-  "A battered, dusty six legged scavenger robot examining wreckage of ancient human skyscrapers being reclaimed by desert sand with a storm brewing in red distance",
-  "Interior view of experimental warp fighter cockpit with softly glowing controls and HUD helmet as test pilot prepares to push craft past light speed barrier",
-  "A stealthy assassin android with night vision eyes infiltrating top secret research base, silently taking out armored guards with knife and garrote wire",
-  "A hacker remotely infiltrating systems of Arasaka Corporation tower through virtual cyberspace of swirling data, coding on terminal displaying access nodes",
-  "A ragged crew narrowly escaping from the massive beak of giant space-dwelling star kraken amid debris of destroyed ships with laser blasts visible ",
-  "A futuristic armored soldier psyching up cleverly disguised, bio-engineered alternate dinosaur before releasing it onto battlefield filled with chaos",
-  "An astronaut haunted by frightening tentacled entities only he can perceive, futilely struggling as they drag him toward dark pit on icy surface of moon Europa",
-  "An android with perfected human mannerisms eagerly answering trivia questions on stage surrounded by cheering audience and swirling lights",
-  "A neon gang member racing law enforcement hover drones through decaying skyscrapers on supersonic hover bike leaving glowing particle trails",
-  "A wizard adept in both mystic arts and illegal tech spare parts channeling lightning while battling mercenaries and gun turrets",
-  "Crew of experimental warpship regaining stunned senses as disabled craft tumbles out of control with streaking stars visible through cockpit window",
-  "A scientist in biohazard suit carefully dissecting elongated skull and tentacled extremities of an alien corpse on operating table in underground bunker",
-  "A desperate rebel freedom fighter racing across battlefield strewn with titanic mechs and wreckage toward extraction ship waiting open in the smoke-filled skies",
-    
+    "An astronaut in a sleek white spacesuit planting the American flag on Mars, red dust and rocks in background, Earth visible in sky",
+    "A beautiful female android with long silver hair, glowing blue eyes, pale skin, standing in slick futuristic nightclub",
+    "A scientist in a lab coat developing nanobots, high tech microscopes and equipment in background",
+    "A pilot with an oxygen mask flying a stealth spaceship through dense asteroid field, firing lasers, cockpit visible",
+    "A combat cyborg with black bionic arms playing an electric guitar during an apocalyptic thunderstorm, surrounded by rubble",
+    "A classic robot butler in suit neatly serving tea to elegant lady on hovering chairs in pristine white room with view of cityscape",
+    "An elf ranger with bow aimed, long hair, cloak, armor, standing amid mystical ruins overgrown with vines",
+    "A fierce post-apocalyptic warrior battling mutated beasts in abandoned city streets filled with rubble and overgrown plants",
+    "An engineer building a teleportation device, lab filled with computers, cables, and glowing portal",
+    "A wizard with staff casting a magic spell, mystical runes surrounding, ancient ruins in misty mountains behind",
+    "A pale vampire with fangs at futuristic nightclub filled with bright neon lights, dancing crowd wearing stylish outfits",
+    "A soldier in futuristic armor aiming a laser rifle, muzzle flash visible, battlefield filled with smoke behind",
+    "A young hacker programming holographic computer displaying complex code, warehouse with graffiti and high tech equipment around",
+    "A samurai with robotic armor and laser katana fighting an enormous, fire-breathing dragon roaring",
+    "A muscular mutant superhero with chainsawed arms rescuing humans from the rubble of a collapsed building",
+    "A steampunk inventor wearing goggles tinkering on a mechanical robot as gears turn, pipes vent steam in workshop",
+    "A Jedi Knight wielding a lightsaber leaving a trail of light, facing off against an enemy with a red lightsaber in nighttime forest",
+    "A pilot controlling a large battle mech, engaging enemy robots and tanks on city streets filled with explosions",
+    "A cowboy with facemask riding a galloping robotic horse with rocket boosters through the desert near pyramids and a spaceship crash site",
+    "A beautiful cyborg DJ at flashy neon rave wearing LED glasses and arm implants, deadmau5-style helmet, operating glowing holographic turntables",
+    "A smiling girl hugging her tall, lean four-legged robot dog with screens for eyes in a sunny green meadow dotted with flowers",
+    "A classic square robot with an artist's beret carefully painting an abstract picture on canvas in art studio with paint tubes and brushes",
+    "A ninja assassin clad in black with masks leaping between high tech skyscrapers at night, throwing knives at armored target",
+    "An old wizard with long white beard wearing robes and pointed hat riding a sleek, colorful hoverboard through mysterious ruins",
+    "A hacker jacked into virtual reality, coding on screens displaying cyberspace environment with digital rain and architectural structures",
+    "A female elf ranger with bow crouching in vivid lush forest with sunlight streaming through the trees behind her",
+    "A neural-linked gamer wearing a headset controlling a humanoid robot fighting in global tournament arena filled with drones and holographic crowds",
+    "A diverse crew including humans, cyborgs, androids on the bridge of an exploratory starship venturing into deep space about to engage warp speed, captain in center seat",
+    "An android with exposed machinery playing speed chess with a human opponent in slick room with bookshelves and trophy case",
+    "A girl befriending a cute fluffy alien with large dark eyes sitting together among grass and alien mushrooms glowing under beautiful night sky",
+    "A scientist injecting himself with experimental nanomachines, body merging with mechanical parts with blue glow visible through seams in skin",
+    "A shiny humanoid robot with tracks instead of legs exploring Mars desert, red rocks and cliffs visible under orange sky",
+    "A futuristic spaceship with glowing engines engaging warp speed, leaving stretched star trails behind approaching massive gas giant planet with rings",
+    "A young hacker programming next-gen AI displaying code on multiple holographic screens inside warehouse with graffiti",
+    "A battlefield depicting the aftermath of a violent robot uprising against humans, damaged machinery leaking oil and sparks among rubble",
+    "A sleek cyborg assassin levitating off the ground using built-in antigravity tech, surrounded by floating holographic data streams in dark room",
+    "An astronaut in advanced spacesuit taking first step onto surface of inhabitable exoplanet, expansive vista of alien landscape and sky visible ",
+    "A biohacker in makeshift basement lab injecting neon glowing DNA vials, genetic engineering equipment with blinking screens around",
+    "A smiling girl engaging in friendly conversation with a hovering orb-shaped AI displaying animated expressions - cityscape visible through windows behind",
+    "A classic robot butler in suit neatly serving tea to masked elites seated on hovering chairs in pristine penthouse suite with expansive city views",
+    "A futuristic battleship leading a small fleet against a larger mothership over earth, visible in background through cockpit window, firing bright weapons leaving glowing trails",
+    "An android with exposed machinery thoroughly engrossed in playing immersive sci-fi virtual reality game, cables linking body to computer servers",
+    "A hoverbike gang riding sleek colorful bikes leaving neon trails through nighttime city streets lined with holographic billboards and signs",
+    "A hacker jacked into the virtual architecture of a sinister megacorporation consisting of ominous towering structures, coding on screens showing cyberspace",
+    "A scientist developing neural implants and prosthetic limbs for radical new human augmentation procedures in lab filled with computers, robotic arms, and vials",
+    "A fighter pilot targeting enemy attack drones during intense aerial dogfight, firing missiles while performing evasive maneuvers, wings of advanced jet visible in cockpit",
+    "A shapeshifting assassin android impersonating a human to infiltrate high-security gala, preparing to draw handgun concealed under elegant evening gown",
+    "A damaged explorer robot examining mysterious glowing hieroglyphs inside ancient towering alien ruins, strange structures and technologies overgrown with vines behind",
+    "The crew of a sleek exploratory starship entering cryogenic pods before faster-than-light journey, automated systems visible maintaining ship operations",
+    "A hooded hacker decrypting data stolen from crash-landed alien scout ship, strings of symbols on computer screens inside warehouse with graffiti and exposed brick",
+    "A smiling girl affectionately hugging cute short robot companion with blinking monitor for a face, grass and blue sky in background",
+    "An astronaut triumphantly planting American flag on surface of Mars, bootprints in red soil with Earth visible in orange sky above",
+    "A scientist carefully monitoring array of computer servers, cables linking equipment to jar with synthetic brain inside glowing yellow liquid",
+    "A female android wearing 1950s style uniform smiling while efficiently serving milkshakes to laughing customers at neon-lit diner with spaceship visible through window",
+    "A pilot in advanced spacesuit ejecting from cockpit of experimental aircraft, firing built-in rocket boosters, flames and smoke trails visible behind",
+    "A hacker stealing corporate secrets in virtual reality representation of office tower, coding on screens showing cyberspace architecture",
+    "A menacing cyborg with half its head replaced by glowing machinery playing chess against an unbeatable AI supercomputer in sleek room",
+    "A genetically engineered dinosaur with spiked tail kept on chain leash by soldier in futuristic armor, abandoned buildings visible behind rubble",
+    "A classic robot butler managing smart home, efficient serving dinner to family while monitoring various devices and appliances simultaneously",
+    "The crew of a Federation starship including humans, aliens, androids gathering for first contact ritual, bridge filled with slick interfaces, planet visible through window",
+    "An assassin android impersonating doctor to infiltrate prison, readying lethal injection hidden in coat",
+    "An affectionate girl gently embracing her dog-sized robot companion with tank treads and a single blinking eye for a head",
+    "A muscular cyborg prize fighter covered in tattoos and cybernetics battling a menacing opponent in caged arena surrounded by cheering audience",
+    "A wizard experimenting with combining futuristic tech like forcefields, levitation, and advanced genetics with magical essences, artifacts, and spellbooks",
+    "The crew of a exploratory vessel looking shocked as their ship is flung into the outer solar system after narrowly surviving an experimental faster than light engine misjump",
+    "A hacker manipulating global stock prices with orbital quantum computer running advanced AI stock trading algorithms, screens displaying dizzying data dashboards",
+    "A musician directing an orchestra made up of various aliens including tall, elegant bird-like creatures playing lyrical stringed instruments",
+    "A barely functioning explorer robot caked in red dust examining strange slimy liquid oozing from orifices of biomechanical structures half-buried on hellish volcanic Venusian surface",
+    "A massive battlecruiser firing all weapons against reptilian capital ship in orbit over gas giant planet with swirling eyes and many moons while several smaller craft are destroyed around it",
+    "An astronaut spacewalking outside slowly rotating space station near luminous nebula, performing repairs on damaged solar panel torn open by micrometeorite",
+    "A scientist overseeing construction of a microscopic nanobot swarm designed for programmable biological editing, petri dishes filled with the bots visible under microscopes",
+    "An alien ambassador with large head, slender body, big glossy eyes signing treaty documents as cameras flash at gathering of various press and leaders in front of United Nations building with flags out front",
+    "A smiling blonde female android wearing 1950's uniform roller skating around flashing neon diner taking orders from seated customers which include aliens and robots",
+    "The crew of the starship Galileo looking stunned by large creature on viewscreen rumbling deep incomprehensible noises during tense first contact event on planet with pink sky visible from hull",
+    "A battered, dusty six legged scavenger robot examining wreckage of ancient human skyscrapers being reclaimed by desert sand with a storm brewing in red distance",
+    "Interior view of experimental warp fighter cockpit with softly glowing controls and HUD helmet as test pilot prepares to push craft past light speed barrier",
+    "A stealthy assassin android with night vision eyes infiltrating top secret research base, silently taking out armored guards with knife and garrote wire",
+    "A hacker remotely infiltrating systems of Arasaka Corporation tower through virtual cyberspace of swirling data, coding on terminal displaying access nodes",
+    "A ragged crew narrowly escaping from the massive beak of giant space-dwelling star kraken amid debris of destroyed ships with laser blasts visible ",
+    "A futuristic armored soldier psyching up cleverly disguised, bio-engineered alternate dinosaur before releasing it onto battlefield filled with chaos",
+    "An astronaut haunted by frightening tentacled entities only he can perceive, futilely struggling as they drag him toward dark pit on icy surface of moon Europa",
+    "An android with perfected human mannerisms eagerly answering trivia questions on stage surrounded by cheering audience and swirling lights",
+    "A neon gang member racing law enforcement hover drones through decaying skyscrapers on supersonic hover bike leaving glowing particle trails",
+    "A wizard adept in both mystic arts and illegal tech spare parts channeling lightning while battling mercenaries and gun turrets",
+    "Crew of experimental warpship regaining stunned senses as disabled craft tumbles out of control with streaking stars visible through cockpit window",
+    "A scientist in biohazard suit carefully dissecting elongated skull and tentacled extremities of an alien corpse on operating table in underground bunker",
+    "A desperate rebel freedom fighter racing across battlefield strewn with titanic mechs and wreckage toward extraction ship waiting open in the smoke-filled skies",
+
     # Add more prompts as needed
 ]
 
@@ -325,9 +393,10 @@ def clean_cache():
     for key in keys_to_delete:
         del recent_prompts[key]
 
+
 def generate_image_using_stable_diffusion(prompt):
      pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
-     image = pipe(prompt,num_inference_steps=12, guidance_scale=7.5).images[0]
+     image = pipe(prompt,num_inference_steps=8, guidance_scale=7.5).images[0]
      bw_layer = image.convert('L')  # Convert to black & white
      img = Image.new(image.mode, image.size)
      img.paste(bw_layer, (0, 0))
@@ -336,37 +405,52 @@ def generate_image_using_stable_diffusion(prompt):
 
 @app.route('/generate', methods=['GET'])
 def generate():
+    
+    category = request.args.get('query')
     if request.method == 'GET':
         clean_cache()  # Clean the cache before selecting a new prompt
-        
+
         # Filter out recently used prompts
         available_prompts = [prompt for prompt in PROMPTS if prompt not in recent_prompts]
-        
+
         if not available_prompts:
             return jsonify({"error": "All prompts have been used recently. Please try again later."})
-        
+
         # Select a random prompt from the available prompts
-        selected_prompt = random.choice(available_prompts)
-        
-        # Update the cache with the selected prompt
-        recent_prompts[selected_prompt] = datetime.now()
-        
-        image_output = generate_image_using_stable_diffusion(selected_prompt)
+        selected_prompts = []
+        if category == "TAT":
+            for _ in range(11):
+                selected_prompt = random.choice(available_prompts)
+                selected_prompts.append(selected_prompt)
+                recent_prompts[selected_prompt] = datetime.now()
+        elif category == "PPDT":
+            selected_prompt = random.choice(available_prompts)
+            recent_prompts[selected_prompt] = datetime.now()
+            selected_prompts.append(selected_prompt)
+        else:
+            return jsonify({"error": "Invalid category"})
 
-        # Convert the image to JPEG format and set the quality
-        image_output = image_output.convert('RGB')
-        img_io = io.BytesIO()
-        image_output.save(img_io, format='JPEG', quality=85)
-        img_io.seek(0)
+        image_outputs = []
+        for prompt in selected_prompts:
+            image_output = generate_image_using_stable_diffusion(prompt)
 
-        # Encode the image to base64
-        img_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
+            # Convert the image to JPEG format and set the quality
+            image_output = image_output.convert('RGB')
+            img_io = io.BytesIO()
+            image_output.save(img_io, format='JPEG', quality=95)
+            img_io.seek(0)
 
-        # Create the data URL
-        image_url = f"data:image/jpeg;base64,{img_base64}"
+            # Encode the image to base64
+            img_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
 
-        # Return the data URL as a JSON response
-        return jsonify({"data": image_url})
+            # Create the data URL
+            image_url = f"data:image/jpeg;base64,{img_base64}"
+
+            image_outputs.append(image_url)
+
+        # Return the data URLs as a JSON response
+        return jsonify({"data":image_outputs})
+    
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
